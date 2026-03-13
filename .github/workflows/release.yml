@@ -38,7 +38,9 @@ jobs:
 
       - name: Build
         if: steps.tag_check.outputs.exists == 'false'
-        run: ./gradlew bootJar
+        run: |
+          chmod +x gradlew
+          ./gradlew bootJar
 
       - name: Create GitHub Release
         if: steps.tag_check.outputs.exists == 'false'
