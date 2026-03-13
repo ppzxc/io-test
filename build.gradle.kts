@@ -7,8 +7,8 @@ plugins {
 }
 
 group = "kr.nanoit"
-version = "0.0.1-SNAPSHOT"
-description = "mot-tester"
+version = "0.0.3"
+description = "io-test"
 
 java {
     toolchain {
@@ -29,11 +29,13 @@ repositories {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-amqp")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    implementation("info.picocli:picocli:4.7.6")
     compileOnly("org.projectlombok:lombok")
     developmentOnly("org.springframework.boot:spring-boot-docker-compose")
     runtimeOnly("org.mariadb.jdbc:mariadb-java-client")
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
     annotationProcessor("org.projectlombok:lombok")
+    annotationProcessor("info.picocli:picocli-codegen:4.7.6")
     testImplementation("org.springframework.boot:spring-boot-starter-amqp-test")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

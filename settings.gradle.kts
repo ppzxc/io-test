@@ -1,1 +1,1 @@
-rootProject.name = "mot-tester"
+rootProject.name = "io-test"

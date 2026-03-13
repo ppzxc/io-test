@@ -1,17 +1,20 @@
 services:
   mariadb:
-    image: 'mariadb:latest'
+    image: 'mariadb:11.4'
     environment:
       - 'MARIADB_DATABASE=mydatabase'
       - 'MARIADB_PASSWORD=secret'
       - 'MARIADB_ROOT_PASSWORD=verysecret'
       - 'MARIADB_USER=myuser'
     ports:
-      - '3306'
+      - '3306:3306'
+    volumes:
+      - './src/main/resources/mo_scheme.sql:/docker-entrypoint-initdb.d/mo_scheme.sql'
   rabbitmq:
-    image: 'rabbitmq:latest'
+    image: 'rabbitmq:4.2.4-management'
     environment:
       - 'RABBITMQ_DEFAULT_PASS=secret'
       - 'RABBITMQ_DEFAULT_USER=myuser'
     ports:
-      - '5672'
+      - '5672:5672'
+      - '15672:15672'
