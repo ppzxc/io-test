@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 @Component
@@ -53,9 +54,9 @@ public class FileTestCommand implements Runnable {
         byte[] payload = buildPayload(size);
 
         System.out.printf("========== File I/O Test (threads=%d, size=%dB) ==========%n", threads, size);
-        System.out.printf("%-11s| %-7s | %-9s | %-7s | %s%n",
-                "Operation", "Count", "Total(ms)", "Avg(ms)", "Throughput");
-        System.out.println("------------------------------------------------------");
+        System.out.printf("%-11s| %-7s | %-9s | %-7s | %-7s | %-7s | %s%n",
+                "Operation", "Count", "Total(ms)", "Avg(ms)", "Min(ms)", "Max(ms)", "Throughput");
+        System.out.println("---------------------------------------------------------------");
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             switch (operation.toLowerCase()) {
@@ -74,7 +75,7 @@ public class FileTestCommand implements Runnable {
             }
         }
 
-        System.out.println("======================================================");
+        System.out.println("===============================================================");
     }
 
     private void runAll(ExecutorService executor, byte[] payload) {
@@ -89,6 +90,8 @@ public class FileTestCommand implements Runnable {
     private WriteResult execWrite(ExecutorService executor, byte[] payload) {
         int perThread = Math.max(1, files / threads);
         java.util.concurrent.ConcurrentLinkedQueue<Path> written = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
+        AtomicLong maxMs = new AtomicLong(0);
 
         long start = System.currentTimeMillis();
         IntStream.range(0, threads)
@@ -96,8 +99,12 @@ public class FileTestCommand implements Runnable {
                     for (int j = 0; j < perThread; j++) {
                         Path p = baseDir.resolve(UUID.randomUUID() + ".bin");
                         try {
+                            long t0 = System.currentTimeMillis();
                             Files.write(p, payload);
+                            long lat = System.currentTimeMillis() - t0;
                             written.add(p);
+                            minMs.updateAndGet(v -> Math.min(v, lat));
+                            maxMs.updateAndGet(v -> Math.max(v, lat));
                         } catch (IOException e) {
                             System.err.println("Write failed: " + e.getMessage());
                         }
@@ -108,11 +115,13 @@ public class FileTestCommand implements Runnable {
         long elapsed = System.currentTimeMillis() - start;
 
         List<Path> paths = List.copyOf(written);
-        return new WriteResult(new OpResult("WRITE", paths.size(), elapsed), paths);
+        return new WriteResult(new OpResult("WRITE", paths.size(), elapsed, minMs.get(), maxMs.get()), paths);
     }
 
     private OpResult execRead(ExecutorService executor, List<Path> paths) {
         int partSize = Math.max(1, (paths.size() + threads - 1) / threads);
+        AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
+        AtomicLong maxMs = new AtomicLong(0);
         long start = System.currentTimeMillis();
 
         List<List<Path>> parts = partition(paths, partSize);
@@ -120,7 +129,11 @@ public class FileTestCommand implements Runnable {
                 .map(part -> CompletableFuture.runAsync(() -> {
                     for (Path p : part) {
                         try {
+                            long t0 = System.currentTimeMillis();
                             Files.readAllBytes(p);
+                            long lat = System.currentTimeMillis() - t0;
+                            minMs.updateAndGet(v -> Math.min(v, lat));
+                            maxMs.updateAndGet(v -> Math.max(v, lat));
                         } catch (IOException e) {
                             System.err.println("Read failed: " + e.getMessage());
                         }
@@ -130,7 +143,7 @@ public class FileTestCommand implements Runnable {
                 .forEach(CompletableFuture::join);
 
         long elapsed = System.currentTimeMillis() - start;
-        return new OpResult("READ", paths.size(), elapsed);
+        return new OpResult("READ", paths.size(), elapsed, minMs.get(), maxMs.get());
     }
 
     private List<Path> setupWrite(byte[] payload) {
@@ -170,12 +183,12 @@ public class FileTestCommand implements Runnable {
         return buf;
     }
 
-    private record OpResult(String op, int count, long totalMs) {
+    private record OpResult(String op, int count, long totalMs, long minMs, long maxMs) {
         void print() {
             double avg = (double) totalMs / Math.max(count, 1);
             double throughput = (count * 1000.0) / Math.max(totalMs, 1);
-            System.out.printf("%-11s| %7d | %9d | %7.2f | %10.2f/s%n",
-                    op, count, totalMs, avg, throughput);
+            System.out.printf("%-11s| %7d | %9d | %7.2f | %7d | %7d | %10.2f/s%n",
+                    op, count, totalMs, avg, minMs, maxMs, throughput);
         }
     }
 

@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 @Component
@@ -50,9 +51,9 @@ public class DbTestCommand implements Runnable {
     @Override
     public void run() {
         System.out.printf("========== MariaDB I/O Test (threads=%d) ===========%n", threads);
-        System.out.printf("%-11s| %-7s | %-9s | %-7s | %s%n",
-                "Operation", "Count", "Total(ms)", "Avg(ms)", "Throughput");
-        System.out.println("---------------------------------------------------");
+        System.out.printf("%-11s| %-7s | %-9s | %-7s | %-7s | %-7s | %s%n",
+                "Operation", "Count", "Total(ms)", "Avg(ms)", "Min(ms)", "Max(ms)", "Throughput");
+        System.out.println("---------------------------------------------------------------");
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             switch (operation.toLowerCase()) {
@@ -75,7 +76,7 @@ public class DbTestCommand implements Runnable {
             }
         }
 
-        System.out.println("===================================================");
+        System.out.println("===============================================================");
     }
 
     // write / read / delete 를 동시에 실행
@@ -101,38 +102,65 @@ public class DbTestCommand implements Runnable {
     private OpResult execWrite(ExecutorService executor, int total) {
         int perThread = Math.max(1, total / threads);
         ConcurrentLinkedQueue<Long> ids = new ConcurrentLinkedQueue<>();
+        AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
+        AtomicLong maxMs = new AtomicLong(0);
 
         long start = System.currentTimeMillis();
-        runConcurrent(executor, threads, () -> {
-            for (int i = 0; i < perThread; i++) {
-                ids.add(moRepository.saveAndFlush(buildTestMo()).getId());
-            }
-        });
+        IntStream.range(0, threads)
+                .mapToObj(i -> CompletableFuture.runAsync(() -> {
+                    for (int j = 0; j < perThread; j++) {
+                        long t0 = System.currentTimeMillis();
+                        ids.add(moRepository.saveAndFlush(buildTestMo()).getId());
+                        long lat = System.currentTimeMillis() - t0;
+                        minMs.updateAndGet(v -> Math.min(v, lat));
+                        maxMs.updateAndGet(v -> Math.max(v, lat));
+                    }
+                }, executor))
+                .toList()
+                .forEach(CompletableFuture::join);
         long elapsed = System.currentTimeMillis() - start;
 
-        return new OpResult("WRITE", perThread * threads, elapsed, new ArrayList<>(ids));
+        return new OpResult("WRITE", perThread * threads, elapsed, minMs.get(), maxMs.get(), new ArrayList<>(ids));
     }
 
     private OpResult execRead(ExecutorService executor, List<Long> ids) {
+        AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
+        AtomicLong maxMs = new AtomicLong(0);
         long start = System.currentTimeMillis();
         partition(ids, threads).stream()
-                .map(part -> CompletableFuture.runAsync(
-                        () -> part.forEach(id -> moRepository.findById(id)), executor))
+                .map(part -> CompletableFuture.runAsync(() -> {
+                    for (Long id : part) {
+                        long t0 = System.currentTimeMillis();
+                        moRepository.findById(id);
+                        long lat = System.currentTimeMillis() - t0;
+                        minMs.updateAndGet(v -> Math.min(v, lat));
+                        maxMs.updateAndGet(v -> Math.max(v, lat));
+                    }
+                }, executor))
                 .toList()
                 .forEach(CompletableFuture::join);
         long elapsed = System.currentTimeMillis() - start;
-        return new OpResult("READ", ids.size(), elapsed, List.of());
+        return new OpResult("READ", ids.size(), elapsed, minMs.get(), maxMs.get(), List.of());
     }
 
     private OpResult execDelete(ExecutorService executor, List<Long> ids) {
+        AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
+        AtomicLong maxMs = new AtomicLong(0);
         long start = System.currentTimeMillis();
         partition(ids, threads).stream()
-                .map(part -> CompletableFuture.runAsync(
-                        () -> part.forEach(moRepository::deleteById), executor))
+                .map(part -> CompletableFuture.runAsync(() -> {
+                    for (Long id : part) {
+                        long t0 = System.currentTimeMillis();
+                        moRepository.deleteById(id);
+                        long lat = System.currentTimeMillis() - t0;
+                        minMs.updateAndGet(v -> Math.min(v, lat));
+                        maxMs.updateAndGet(v -> Math.max(v, lat));
+                    }
+                }, executor))
                 .toList()
                 .forEach(CompletableFuture::join);
         long elapsed = System.currentTimeMillis() - start;
-        return new OpResult("DELETE", ids.size(), elapsed, List.of());
+        return new OpResult("DELETE", ids.size(), elapsed, minMs.get(), maxMs.get(), List.of());
     }
 
     private List<Long> setupData(int n) {
@@ -145,13 +173,6 @@ public class DbTestCommand implements Runnable {
 
     private void cleanup(List<Long> ids) {
         ids.forEach(moRepository::deleteById);
-    }
-
-    private void runConcurrent(ExecutorService executor, int n, Runnable task) {
-        IntStream.range(0, n)
-                .mapToObj(i -> CompletableFuture.runAsync(task, executor))
-                .toList()
-                .forEach(CompletableFuture::join);
     }
 
     private <T> List<List<T>> partition(List<T> list, int n) {
@@ -186,12 +207,12 @@ public class DbTestCommand implements Runnable {
         return "x".repeat(bytes);
     }
 
-    private record OpResult(String op, int count, long totalMs, List<Long> ids) {
+    private record OpResult(String op, int count, long totalMs, long minMs, long maxMs, List<Long> ids) {
         void print() {
             double avg = (double) totalMs / Math.max(count, 1);
             double throughput = (count * 1000.0) / Math.max(totalMs, 1);
-            System.out.printf("%-11s| %7d | %9d | %7.2f | %10.2f/s%n",
-                    op, count, totalMs, avg, throughput);
+            System.out.printf("%-11s| %7d | %9d | %7.2f | %7d | %7d | %10.2f/s%n",
+                    op, count, totalMs, avg, minMs, maxMs, throughput);
         }
     }
 }

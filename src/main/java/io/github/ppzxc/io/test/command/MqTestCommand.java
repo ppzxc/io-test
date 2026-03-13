@@ -13,6 +13,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 @Component
@@ -53,9 +54,9 @@ public class MqTestCommand implements Runnable {
         byte[] payload = buildPayload(size);
 
         System.out.printf("========== RabbitMQ I/O Test (threads=%d) ==========%n", threads);
-        System.out.printf("%-11s| %-7s | %-9s | %-7s | %s%n",
-                "Operation", "Count", "Total(ms)", "Avg(ms)", "Throughput");
-        System.out.println("----------------------------------------------------");
+        System.out.printf("%-11s| %-7s | %-9s | %-7s | %-7s | %-7s | %s%n",
+                "Operation", "Count", "Total(ms)", "Avg(ms)", "Min(ms)", "Max(ms)", "Throughput");
+        System.out.println("---------------------------------------------------------------");
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             switch (operation.toLowerCase()) {
@@ -73,7 +74,7 @@ public class MqTestCommand implements Runnable {
             }
         }
 
-        System.out.println("====================================================");
+        System.out.println("===============================================================");
     }
 
     private void runAll(ExecutorService executor, byte[] payload) {
@@ -94,29 +95,52 @@ public class MqTestCommand implements Runnable {
     }
 
     private OpResult execPublish(ExecutorService executor, byte[] payload, int total) {
-        int perThread = Math.max(1, total / threads);
+        int perThread = total / threads;
+        int remainder = total % threads;
+        AtomicInteger published = new AtomicInteger(0);
+        AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
+        AtomicLong maxMs = new AtomicLong(0);
         long start = System.currentTimeMillis();
         IntStream.range(0, threads)
                 .mapToObj(i -> CompletableFuture.runAsync(() -> {
-                    for (int j = 0; j < perThread; j++) {
+                    int cnt = perThread + (i < remainder ? 1 : 0);
+                    for (int j = 0; j < cnt; j++) {
+                        long t0 = System.currentTimeMillis();
                         rabbitTemplate.convertAndSend(queue, payload);
+                        long lat = System.currentTimeMillis() - t0;
+                        published.incrementAndGet();
+                        minMs.updateAndGet(v -> Math.min(v, lat));
+                        maxMs.updateAndGet(v -> Math.max(v, lat));
                     }
                 }, executor))
                 .toList()
                 .forEach(CompletableFuture::join);
         long elapsed = System.currentTimeMillis() - start;
-        return new OpResult("PUBLISH", perThread * threads, elapsed);
+        return new OpResult("PUBLISH", published.get(), elapsed, minMs.get(), maxMs.get());
     }
 
     private OpResult execConsume(ExecutorService executor, int total) {
         AtomicInteger received = new AtomicInteger(0);
+        AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
+        AtomicLong maxMs = new AtomicLong(0);
         long start = System.currentTimeMillis();
         IntStream.range(0, threads)
                 .mapToObj(i -> CompletableFuture.runAsync(() -> {
-                    while (received.get() < total) {
+                    while (true) {
+                        int slot = received.getAndIncrement();
+                        if (slot >= total) {
+                            received.decrementAndGet();
+                            break;
+                        }
+                        long t0 = System.currentTimeMillis();
                         Message msg = rabbitTemplate.receive(queue, 3000);
-                        if (msg == null) break;
-                        received.incrementAndGet();
+                        long lat = System.currentTimeMillis() - t0;
+                        if (msg == null) {
+                            received.decrementAndGet();
+                            break;
+                        }
+                        minMs.updateAndGet(v -> Math.min(v, lat));
+                        maxMs.updateAndGet(v -> Math.max(v, lat));
                     }
                 }, executor))
                 .toList()
@@ -126,7 +150,7 @@ public class MqTestCommand implements Runnable {
         if (got < total) {
             System.err.println("Timeout waiting for messages. Received: " + got + "/" + total);
         }
-        return new OpResult("CONSUME", got, elapsed);
+        return new OpResult("CONSUME", got, elapsed, minMs.get(), maxMs.get());
     }
 
     private void setupPublish(byte[] payload, int n) {
@@ -145,12 +169,12 @@ public class MqTestCommand implements Runnable {
         return buf;
     }
 
-    private record OpResult(String op, int count, long totalMs) {
+    private record OpResult(String op, int count, long totalMs, long minMs, long maxMs) {
         void print() {
             double avg = (double) totalMs / Math.max(count, 1);
             double throughput = (count * 1000.0) / Math.max(totalMs, 1);
-            System.out.printf("%-11s| %7d | %9d | %7.2f | %10.2f/s%n",
-                    op, count, totalMs, avg, throughput);
+            System.out.printf("%-11s| %7d | %9d | %7.2f | %7d | %7d | %10.2f/s%n",
+                    op, count, totalMs, avg, minMs, maxMs, throughput);
         }
     }
 }
