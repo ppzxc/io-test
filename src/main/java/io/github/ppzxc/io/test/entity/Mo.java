@@ -1,4 +1,4 @@
-package kr.nanoit.mot.tester.entity;
+package io.github.ppzxc.io.test.entity;
 
 import jakarta.persistence.*;
 import lombok.*;

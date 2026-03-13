@@ -1,6 +1,6 @@
-package kr.nanoit.mot.tester;
+package io.github.ppzxc.io.test;
 
-import kr.nanoit.mot.tester.command.MainCommand;
+import io.github.ppzxc.io.test.command.MainCommand;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.ExitCodeGenerator;
@@ -11,7 +11,7 @@ import picocli.CommandLine;
 import picocli.CommandLine.IFactory;
 
 @SpringBootApplication
-public class MotTesterApplication implements CommandLineRunner, ExitCodeGenerator {
+public class IoTestApplication implements CommandLineRunner, ExitCodeGenerator {
 
     @Autowired
     private MainCommand mainCommand;
@@ -42,6 +42,6 @@ public class MotTesterApplication implements CommandLineRunner, ExitCodeGenerato
     }
 
     public static void main(String[] args) {
-        System.exit(SpringApplication.exit(SpringApplication.run(MotTesterApplication.class, args)));
+        System.exit(SpringApplication.exit(SpringApplication.run(IoTestApplication.class, args)));
     }
 }

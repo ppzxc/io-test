@@ -1,4 +1,4 @@
-package kr.nanoit.mot.tester.command;
+package io.github.ppzxc.io.test.command;
 
 import org.springframework.stereotype.Component;
 import picocli.CommandLine.Command;

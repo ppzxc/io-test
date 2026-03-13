@@ -1,6 +1,6 @@
-package kr.nanoit.mot.tester.repository;
+package io.github.ppzxc.io.test.repository;
 
-import kr.nanoit.mot.tester.entity.Mo;
+import io.github.ppzxc.io.test.entity.Mo;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

@@ -1,9 +1,9 @@
-package kr.nanoit.mot.tester.command;
+package io.github.ppzxc.io.test.command;
 
-import kr.nanoit.mot.tester.entity.CdrStatus;
-import kr.nanoit.mot.tester.entity.Mo;
-import kr.nanoit.mot.tester.entity.MoType;
-import kr.nanoit.mot.tester.repository.MoRepository;
+import io.github.ppzxc.io.test.entity.CdrStatus;
+import io.github.ppzxc.io.test.entity.Mo;
+import io.github.ppzxc.io.test.entity.MoType;
+import io.github.ppzxc.io.test.repository.MoRepository;
 import org.springframework.stereotype.Component;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;

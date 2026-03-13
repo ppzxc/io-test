@@ -1,10 +1,10 @@
-package kr.nanoit.mot.tester;
+package io.github.ppzxc.io.test;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class MotTesterApplicationTests {
+class IoTestApplicationTests {
 
   @Test
   void contextLoads() {

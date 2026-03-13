@@ -6,8 +6,8 @@ plugins {
     id("org.graalvm.buildtools.native") version "0.11.4"
 }
 
-group = "kr.nanoit"
-version = "0.0.3"
+group = "io.github.ppzxc"
+version = "0.0.4"
 description = "io-test"
 
 java {

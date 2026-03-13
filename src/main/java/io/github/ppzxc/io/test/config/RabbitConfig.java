@@ -1,4 +1,4 @@
-package kr.nanoit.mot.tester.config;
+package io.github.ppzxc.io.test.config;
 
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;

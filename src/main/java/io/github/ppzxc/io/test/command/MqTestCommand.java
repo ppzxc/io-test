@@ -1,4 +1,4 @@
-package kr.nanoit.mot.tester.command;
+package io.github.ppzxc.io.test.command;
 
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.Queue;
