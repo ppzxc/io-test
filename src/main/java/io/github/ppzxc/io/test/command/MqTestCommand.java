@@ -105,12 +105,12 @@ public class MqTestCommand implements Runnable {
                 .mapToObj(i -> CompletableFuture.runAsync(() -> {
                     int cnt = perThread + (i < remainder ? 1 : 0);
                     for (int j = 0; j < cnt; j++) {
-                        long t0 = System.currentTimeMillis();
+                        long t0 = System.nanoTime();
                         rabbitTemplate.convertAndSend(queue, payload);
-                        long lat = System.currentTimeMillis() - t0;
+                        long latMs = (System.nanoTime() - t0) / 1_000_000;
                         published.incrementAndGet();
-                        minMs.updateAndGet(v -> Math.min(v, lat));
-                        maxMs.updateAndGet(v -> Math.max(v, lat));
+                        minMs.updateAndGet(v -> Math.min(v, latMs));
+                        maxMs.updateAndGet(v -> Math.max(v, latMs));
                     }
                 }, executor))
                 .toList()
@@ -120,6 +120,7 @@ public class MqTestCommand implements Runnable {
     }
 
     private OpResult execConsume(ExecutorService executor, int total) {
+        AtomicInteger claimed = new AtomicInteger(0);
         AtomicInteger received = new AtomicInteger(0);
         AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
         AtomicLong maxMs = new AtomicLong(0);
@@ -127,20 +128,21 @@ public class MqTestCommand implements Runnable {
         IntStream.range(0, threads)
                 .mapToObj(i -> CompletableFuture.runAsync(() -> {
                     while (true) {
-                        int slot = received.getAndIncrement();
+                        int slot = claimed.getAndIncrement();
                         if (slot >= total) {
-                            received.decrementAndGet();
+                            claimed.decrementAndGet();
                             break;
                         }
-                        long t0 = System.currentTimeMillis();
+                        long t0 = System.nanoTime();
                         Message msg = rabbitTemplate.receive(queue, 3000);
-                        long lat = System.currentTimeMillis() - t0;
+                        long latMs = (System.nanoTime() - t0) / 1_000_000;
                         if (msg == null) {
-                            received.decrementAndGet();
+                            claimed.decrementAndGet();
                             break;
                         }
-                        minMs.updateAndGet(v -> Math.min(v, lat));
-                        maxMs.updateAndGet(v -> Math.max(v, lat));
+                        received.incrementAndGet();
+                        minMs.updateAndGet(v -> Math.min(v, latMs));
+                        maxMs.updateAndGet(v -> Math.max(v, latMs));
                     }
                 }, executor))
                 .toList()

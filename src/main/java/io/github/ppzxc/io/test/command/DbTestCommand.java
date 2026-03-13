@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
@@ -100,27 +101,31 @@ public class DbTestCommand implements Runnable {
     }
 
     private OpResult execWrite(ExecutorService executor, int total) {
-        int perThread = Math.max(1, total / threads);
+        int perThread = total / threads;
+        int remainder = total % threads;
         ConcurrentLinkedQueue<Long> ids = new ConcurrentLinkedQueue<>();
+        AtomicInteger written = new AtomicInteger(0);
         AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
         AtomicLong maxMs = new AtomicLong(0);
 
         long start = System.currentTimeMillis();
         IntStream.range(0, threads)
                 .mapToObj(i -> CompletableFuture.runAsync(() -> {
-                    for (int j = 0; j < perThread; j++) {
-                        long t0 = System.currentTimeMillis();
+                    int cnt = perThread + (i < remainder ? 1 : 0);
+                    for (int j = 0; j < cnt; j++) {
+                        long t0 = System.nanoTime();
                         ids.add(moRepository.saveAndFlush(buildTestMo()).getId());
-                        long lat = System.currentTimeMillis() - t0;
-                        minMs.updateAndGet(v -> Math.min(v, lat));
-                        maxMs.updateAndGet(v -> Math.max(v, lat));
+                        long latMs = (System.nanoTime() - t0) / 1_000_000;
+                        written.incrementAndGet();
+                        minMs.updateAndGet(v -> Math.min(v, latMs));
+                        maxMs.updateAndGet(v -> Math.max(v, latMs));
                     }
                 }, executor))
                 .toList()
                 .forEach(CompletableFuture::join);
         long elapsed = System.currentTimeMillis() - start;
 
-        return new OpResult("WRITE", perThread * threads, elapsed, minMs.get(), maxMs.get(), new ArrayList<>(ids));
+        return new OpResult("WRITE", written.get(), elapsed, minMs.get(), maxMs.get(), new ArrayList<>(ids));
     }
 
     private OpResult execRead(ExecutorService executor, List<Long> ids) {
@@ -130,11 +135,11 @@ public class DbTestCommand implements Runnable {
         partition(ids, threads).stream()
                 .map(part -> CompletableFuture.runAsync(() -> {
                     for (Long id : part) {
-                        long t0 = System.currentTimeMillis();
+                        long t0 = System.nanoTime();
                         moRepository.findById(id);
-                        long lat = System.currentTimeMillis() - t0;
-                        minMs.updateAndGet(v -> Math.min(v, lat));
-                        maxMs.updateAndGet(v -> Math.max(v, lat));
+                        long latMs = (System.nanoTime() - t0) / 1_000_000;
+                        minMs.updateAndGet(v -> Math.min(v, latMs));
+                        maxMs.updateAndGet(v -> Math.max(v, latMs));
                     }
                 }, executor))
                 .toList()
@@ -150,11 +155,11 @@ public class DbTestCommand implements Runnable {
         partition(ids, threads).stream()
                 .map(part -> CompletableFuture.runAsync(() -> {
                     for (Long id : part) {
-                        long t0 = System.currentTimeMillis();
+                        long t0 = System.nanoTime();
                         moRepository.deleteById(id);
-                        long lat = System.currentTimeMillis() - t0;
-                        minMs.updateAndGet(v -> Math.min(v, lat));
-                        maxMs.updateAndGet(v -> Math.max(v, lat));
+                        long latMs = (System.nanoTime() - t0) / 1_000_000;
+                        minMs.updateAndGet(v -> Math.min(v, latMs));
+                        maxMs.updateAndGet(v -> Math.max(v, latMs));
                     }
                 }, executor))
                 .toList()

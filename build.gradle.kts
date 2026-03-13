@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.ppzxc"
-version = "0.0.5"
+version = "0.0.6"
 description = "io-test"
 
 java {

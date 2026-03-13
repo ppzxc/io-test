@@ -79,8 +79,7 @@ public class FileTestCommand implements Runnable {
     }
 
     private void runAll(ExecutorService executor, byte[] payload) {
-        CompletableFuture<WriteResult> wf = CompletableFuture.supplyAsync(() -> execWrite(executor, payload), executor);
-        WriteResult wr = wf.join();
+        WriteResult wr = execWrite(executor, payload);
         wr.result().print();
 
         execRead(executor, wr.paths()).print();
@@ -88,7 +87,8 @@ public class FileTestCommand implements Runnable {
     }
 
     private WriteResult execWrite(ExecutorService executor, byte[] payload) {
-        int perThread = Math.max(1, files / threads);
+        int perThread = files / threads;
+        int remainder = files % threads;
         java.util.concurrent.ConcurrentLinkedQueue<Path> written = new java.util.concurrent.ConcurrentLinkedQueue<>();
         AtomicLong minMs = new AtomicLong(Long.MAX_VALUE);
         AtomicLong maxMs = new AtomicLong(0);
@@ -96,15 +96,16 @@ public class FileTestCommand implements Runnable {
         long start = System.currentTimeMillis();
         IntStream.range(0, threads)
                 .mapToObj(i -> CompletableFuture.runAsync(() -> {
-                    for (int j = 0; j < perThread; j++) {
+                    int cnt = perThread + (i < remainder ? 1 : 0);
+                    for (int j = 0; j < cnt; j++) {
                         Path p = baseDir.resolve(UUID.randomUUID() + ".bin");
                         try {
-                            long t0 = System.currentTimeMillis();
+                            long t0 = System.nanoTime();
                             Files.write(p, payload);
-                            long lat = System.currentTimeMillis() - t0;
+                            long latMs = (System.nanoTime() - t0) / 1_000_000;
                             written.add(p);
-                            minMs.updateAndGet(v -> Math.min(v, lat));
-                            maxMs.updateAndGet(v -> Math.max(v, lat));
+                            minMs.updateAndGet(v -> Math.min(v, latMs));
+                            maxMs.updateAndGet(v -> Math.max(v, latMs));
                         } catch (IOException e) {
                             System.err.println("Write failed: " + e.getMessage());
                         }
@@ -129,11 +130,11 @@ public class FileTestCommand implements Runnable {
                 .map(part -> CompletableFuture.runAsync(() -> {
                     for (Path p : part) {
                         try {
-                            long t0 = System.currentTimeMillis();
+                            long t0 = System.nanoTime();
                             Files.readAllBytes(p);
-                            long lat = System.currentTimeMillis() - t0;
-                            minMs.updateAndGet(v -> Math.min(v, lat));
-                            maxMs.updateAndGet(v -> Math.max(v, lat));
+                            long latMs = (System.nanoTime() - t0) / 1_000_000;
+                            minMs.updateAndGet(v -> Math.min(v, latMs));
+                            maxMs.updateAndGet(v -> Math.max(v, latMs));
                         } catch (IOException e) {
                             System.err.println("Read failed: " + e.getMessage());
                         }
