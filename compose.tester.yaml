@@ -1,0 +1,21 @@
+services:
+  tester:
+    image: eclipse-temurin:25-jre-alpine
+    volumes:
+      - './build/libs/io-tester-0.0.3.jar:/app/app.jar'
+    working_dir: /app
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - MQ_HOST=${MQ_HOST}
+      - MQ_PORT=${MQ_PORT:-5672}
+      - MQ_USER=${MQ_USER}
+      - MQ_PASSWORD=${MQ_PASSWORD}
+    entrypoint: ["java", "-jar", "app.jar"]
+    command: ["--help"]
